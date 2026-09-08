@@ -1,6 +1,8 @@
-# Klip — AI Clipboard Manager 📋🧠
+<div align="center">
 
-> Windows gives you clipboard history. We give it a brain.
+# 📋 Klip — AI Clipboard Manager
+
+### *Windows gives you clipboard history. We give it a brain.*
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Tests](https://img.shields.io/badge/tests-26%2F26%20passing-brightgreen)
@@ -11,6 +13,12 @@
 Klip watches your clipboard, saves everything, and adds AI superpowers:
 summarize an article you copied, fix code from StackOverflow, translate anything — one click away.
 Every clip is auto-tagged (🔗 link / ⌨ code / text), searchable, and timestamped.
+
+[Quick Start](#-quick-start) · [Features](#-features) · [Safety](#-safety) · [Roadmap](#-roadmap)
+
+</div>
+
+---
 
 ## ✨ Features (v1.2)
 
@@ -77,6 +85,9 @@ Klip/
 │   └── preflight.py       # "safe to run" environment check
 ├── klip_data/             # Your local data (.env, history DB) — gitignored
 ├── Klip.bat               # Double-click launcher
+├── SECURITY.md            # Security policy + safety model
+├── PROJECT_BRIEF.md       # Full project brief (for AI assistants)
+├── LICENSE                # MIT
 └── requirements.txt
 ```
 
@@ -87,6 +98,8 @@ Klip/
 - 🤖 **AI calls only on your click** — Klip never contacts any server by itself. The only network call happens when *you* press an AI action button.
 - 🚫 **No telemetry, no accounts, no tracking.**
 - ⏸️ **You control listening** — pause/resume from the tray menu anytime.
+
+Full security model: [SECURITY.md](SECURITY.md)
 
 ## 📜 Version History
 
@@ -114,4 +127,8 @@ If Klip saves you time, drop a ⭐ — it helps more people find it.
 
 ---
 
+<div align="center">
+
 Built by [RolBol](https://github.com/OfficialTanishSharma) — also building [Zevion](https://github.com/OfficialTanishSharma/Zevion), a safety-first AI desktop agent.
+
+</div>
