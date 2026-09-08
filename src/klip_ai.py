@@ -120,10 +120,46 @@ def build_prompt(action: str, text: str, translate_lang: str = "Hindi") -> str:
     return PROMPTS.get(action, PROMPTS["summarize"]) + text
 
 
+def _fetch_github_readme(url: str):
+    """If the clip is a GitHub repo URL, fetch its README so AI sees real content.
+
+    Returns the fetched text, or None when the URL isn't a GitHub repo page
+    or the fetch fails (AI then just gets the URL itself).
+    """
+    match = re.match(
+        r"^https?://(?:www\.)?github\.com/([\w.\-]+)/([\w.\-]+)/?(?:#.*)?$",
+        url.strip(),
+    )
+    if not match:
+        return None
+    owner, repo = match.group(1), match.group(2)
+    raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/main/README.md"
+    try:
+        request = urllib.request.Request(
+            raw_url,
+            headers={"User-Agent": "Klip/1.0"},
+        )
+        with urllib.request.urlopen(request, timeout=15) as response:
+            content = response.read().decode("utf-8", errors="replace")
+        if not content.strip():
+            return None
+        return f"GitHub repository: https://github.com/{owner}/{repo}\nREADME:\n{content}"
+    except Exception:
+        return None
+
+
 def ask_ai(action: str, text: str, translate_lang: str = "Hindi") -> str:
     """Send text to the first available provider, return the answer."""
     if not PROVIDERS:
         return "No providers configured."
+
+    # A bare GitHub repo URL carries no content to summarize/explain — fetch
+    # its README first so the AI answers about the real repo, not a guess.
+    stripped = text.strip()
+    if len(stripped.split()) <= 3:
+        fetched = _fetch_github_readme(stripped)
+        if fetched:
+            text = fetched
 
     # Very long clips: keep the head + tail so the prompt stays within limits
     if len(text) > 12000:
