@@ -1,0 +1,7 @@
+klip_data/
+__pycache__/
+*.pyc
+.env
+
+# personal screenshots (not project files)
+Screenshot*.png
