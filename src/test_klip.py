@@ -44,7 +44,7 @@ def test_stats():
 # ---- Safety guard tests ----
 
 def test_guard_groq_key():
-    hit, why = is_sensitive("my key is gsk_rXrbu2PgwpI0vrwTVEBDWGdyb3FY")
+    hit, why = is_sensitive("my key is gsk_FAKEKEY1234567890abcdefFAKEKEY")
     assert hit and why == "API key"
 
 def test_guard_openai_key():
