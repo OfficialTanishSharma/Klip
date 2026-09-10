@@ -16,7 +16,13 @@ import urllib.request
 from pathlib import Path
 
 # .env lives in klip_data/ (gitignored — never upload keys)
-ENV_PATH = Path(__file__).parent.parent / "klip_data" / ".env"
+try:
+    from app_paths import app_root
+except ImportError:  # direct script run without package context
+    from pathlib import Path as _P
+    def app_root():
+        return _P(__file__).parent.parent
+ENV_PATH = app_root() / "klip_data" / ".env"
 
 
 def load_env():
@@ -27,6 +33,37 @@ def load_env():
             if line and not line.startswith("#") and "=" in line:
                 key, _, value = line.partition("=")
                 os.environ.setdefault(key.strip(), value.strip())
+
+
+def has_api_key() -> bool:
+    """True when at least one provider in the chain has a key configured."""
+    return any(os.environ.get(p["key_env"], "").strip() for p in PROVIDERS)
+
+
+def save_api_key(key: str, key_env: str = "GROQ_API_KEY") -> bool:
+    """Write the key into klip_data/.env (creating it if needed) and activate
+    it for this session — no restart needed. An existing line for the same
+    key name is replaced, everything else (comments, other keys) is kept.
+
+    Returns False when the key is empty. The key never leaves the machine:
+    .env is local-only and gitignored.
+    """
+    key = key.strip()
+    if not key:
+        return False
+
+    lines = []
+    if ENV_PATH.exists():
+        lines = [
+            line for line in ENV_PATH.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.strip().startswith(f"{key_env}=")
+        ]
+    lines.append(f"{key_env}={key}")
+    ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    os.environ[key_env] = key
+    return True
 
 
 load_env()

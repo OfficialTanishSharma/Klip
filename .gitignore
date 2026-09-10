@@ -2,3 +2,6 @@ klip_data/
 __pycache__/
 *.pyc
 .env
+build/
+dist/
+*.spec.bak

@@ -13,7 +13,12 @@ from pathlib import Path
 import pyperclip
 
 # Database file lives in klip_data/ next to the project root
-DB_DIR = Path(__file__).parent.parent / "klip_data"
+try:
+    from app_paths import app_root
+except ImportError:
+    def app_root():
+        return Path(__file__).parent.parent
+DB_DIR = app_root() / "klip_data"
 DB_DIR.mkdir(exist_ok=True)
 DB_PATH = DB_DIR / "klip.db"
 

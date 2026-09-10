@@ -6,7 +6,12 @@ Reads/writes klip_data/settings.json. All options user-controllable from the GUI
 import json
 from pathlib import Path
 
-SETTINGS_PATH = Path(__file__).parent.parent / "klip_data" / "settings.json"
+try:
+    from app_paths import app_root
+except ImportError:
+    def app_root():
+        return Path(__file__).parent.parent
+SETTINGS_PATH = app_root() / "klip_data" / "settings.json"
 
 DEFAULTS = {
     "ai_actions": {

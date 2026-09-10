@@ -8,7 +8,7 @@
 ![Tests](https://img.shields.io/badge/tests-26%2F26%20passing-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Status](https://img.shields.io/badge/status-v1.2%20live-success)
+![Status](https://img.shields.io/badge/status-v1.4%20live-success)
 
 Klip watches your clipboard, saves everything, and adds AI superpowers:
 summarize an article you copied, fix code from StackOverflow, translate anything — one click away.
@@ -20,13 +20,15 @@ Every clip is auto-tagged (🔗 link / ⌨ code / text), searchable, and timesta
 
 ---
 
-## ✨ Features (v1.2)
+## ✨ Features (v1.4)
 
 - [x] 📋 Clipboard history — every copy auto-saved (duplicates merged), live list refresh
 - [x] 🏷 Auto-tagging — clips detected as **link 🔗** / **code ⌨** / text automatically
 - [x] 🔍 Search — find anything you copied (Ctrl+F)
 - [x] ⏱ Age column — see how old every clip is (2m / 3h / 5d)
 - [x] 🤖 AI actions — Summarize / Translate (25 languages) / Explain / Fix Code (Groq)
+- [x] 🔌 **AI Connect dialog — paste your API key in the app, no .env editing needed**
+- [x] 📦 **Standalone EXE — download, run, done (no Python required)**
 - [x] 📌 Pin clips — keep important clips at the top, safe from history limits
 - [x] 🗑 Delete single clips — clean up without wiping everything
 - [x] ⌨️ Shortcuts — Ctrl+B panel, Ctrl+F search, Ctrl+P pin, Ctrl+C copy, Del delete, Esc reset
@@ -38,6 +40,14 @@ Every clip is auto-tagged (🔗 link / ⌨ code / text), searchable, and timesta
 - [x] 🛡️ Safety guard — warns before sending passwords/keys to AI
 
 ## 🚀 Quick Start
+
+### Option A — Download the EXE (no Python needed)
+
+1. Grab `Klip-v1.4-windows.zip` from [Releases](https://github.com/OfficialTanishSharma/Klip/releases/latest)
+2. Unzip anywhere → run `Klip.exe`
+3. On first launch, Klip asks for a free Groq API key — paste it in the **Connect AI** dialog (get one at [console.groq.com/keys](https://console.groq.com/keys)) and you're done. No files to edit.
+
+### Option B — Run from source
 
 ```bash
 git clone https://github.com/OfficialTanishSharma/Klip.git
@@ -55,7 +65,10 @@ python src/klip_history.py
 python src/test_klip.py
 ```
 
-### Setup (AI actions)
+### Setup (AI actions — source install only)
+
+The EXE build asks for the key in-app on first launch. Running from source? Either
+paste the key in the app (**Settings → 🔑 Connect AI**) or:
 
 1. Get a **free** API key at [console.groq.com/keys](https://console.groq.com/keys)
 2. Create `klip_data/.env` with one line:
@@ -75,16 +88,18 @@ GROQ_API_KEY=your_key_here
 ```
 Klip/
 ├── src/
+│   ├── app_paths.py       # Source/EXE path resolution (klip_data location)
 │   ├── klip_history.py    # Clipboard listener + SQLite storage (the engine)
 │   ├── klip_ai.py         # AI actions via Groq + sensitive-content guard
-│   ├── klip_panel.py      # Dark-theme GUI panel (Tkinter)
+│   ├── klip_panel.py      # Dark-theme GUI panel (Tkinter) + AI Connect dialog
 │   ├── klip_settings.py   # Settings load/save (JSON)
 │   ├── test_klip.py       # Unit tests (26)
 │   ├── test_gui.py        # GUI smoke test
 │   ├── test_ai.py         # Live AI call test
 │   └── preflight.py       # "safe to run" environment check
 ├── klip_data/             # Your local data (.env, history DB) — gitignored
-├── Klip.bat               # Double-click launcher
+├── Klip.bat               # Double-click launcher (source)
+├── Klip.spec              # PyInstaller build spec (EXE)
 ├── SECURITY.md            # Security policy + safety model
 ├── PROJECT_BRIEF.md       # Full project brief (for AI assistants)
 ├── LICENSE                # MIT
@@ -108,10 +123,12 @@ Full security model: [SECURITY.md](SECURITY.md)
 | **v1.0** | Clipboard history + AI actions + GUI panel |
 | **v1.1** | Pin clips, system tray, settings window, sensitive-content guard |
 | **v1.2** | Auto-tagging (link/code/text), age column, double-click copy, Esc shortcut, save AI result, JSON export |
+| **v1.3** | Project structure cleanup, `app_paths.py` for source/EXE parity |
+| **v1.4** | **Standalone EXE**, AI Connect dialog (in-app API key setup), live translate-language switch, single-instance guard, selection/deselect fixes |
 
 ## 🛣 Roadmap
 
-- [ ] **v1.3** — standalone EXE (PyInstaller) — no Python needed
+- [x] ~~**v1.3** — standalone EXE (PyInstaller) — no Python needed~~ ✅ v1.4
 - [ ] **v2.0** — image & file clipboard support + global hotkey
 - [ ] Multi-monitor-friendly popup near cursor
 - [ ] More AI providers (user's choice)

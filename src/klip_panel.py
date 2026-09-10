@@ -19,9 +19,34 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+# ---- Single-instance guard ----
+# A second Klip copies can't see the first one's window (tray-minimized) and
+# two clipboard listeners fight each other — the AI queue deadlocks and the
+# panel freezes on "Working...". Windows named mutex makes that impossible:
+# the second launch just exits silently.
+try:
+    _mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Klip_SingleInstance_Mutex")
+    _ALREADY_RUNNING = (ctypes.windll.kernel32.GetLastError() == 183)  # ERROR_ALREADY_EXISTS
+except Exception:
+    _ALREADY_RUNNING = False
+
+if _ALREADY_RUNNING and not getattr(sys, "_klip_child_ok", False):
+    # Show the existing window is hard without IPC; a plain message is fine:
+    try:
+        import tkinter as _tk
+        _r = _tk.Tk(); _r.withdraw()
+        from tkinter import messagebox as _mb
+        _mb.showinfo("Klip", "Klip is already running.\n\nLook for the 📋 icon in your system tray (bottom-right, near the clock) — right-click it → Open panel.")
+        _r.destroy()
+    except Exception:
+        pass
+    sys.exit(0)
+
+
 from klip_history import KlipHistory, ClipboardListener
-from klip_ai import ask_ai, is_sensitive, LANGUAGES
+from klip_ai import ask_ai, is_sensitive, LANGUAGES, has_api_key, save_api_key
 from klip_settings import load_settings, save_settings
+from app_paths import app_root
 
 try:
     import pystray
@@ -77,6 +102,101 @@ THEME = {
 }
 
 
+class ApiKeyWindow:
+    """First-run dialog: asks for the Groq API key when none is configured.
+
+    Saves straight into klip_data/.env via save_api_key() — the user never
+    opens the .env file by hand. Key stays local, nothing is sent anywhere
+    except the AI call itself.
+    """
+
+    def __init__(self, app):
+        self.app = app
+        self.win = tk.Toplevel(app.root)
+        self.win.title("Klip — Connect AI")
+        self.win.geometry("460x430")
+        self.win.configure(bg=THEME["bg"])
+        self.win.resizable(False, False)
+        self.win.grab_set()  # modal — panel blocked until key is handled
+        self.win.protocol("WM_DELETE_WINDOW", self._skip)
+        self.win.after(150, lambda: self.win.lift() or self.key_entry.focus_set()
+                       if hasattr(self, "key_entry") else None)
+        self._build()
+
+    def _build(self):
+        dark, card, fg, accent = THEME["bg"], THEME["card"], THEME["fg"], THEME["accent"]
+        muted, green = THEME["muted"], THEME["green"]
+
+        tk.Label(self.win, text="🔌 Connect your AI", font=("Segoe UI", 15, "bold"),
+                 bg=dark, fg=accent).pack(anchor="w", padx=18, pady=(18, 2))
+        tk.Label(self.win, text="Klip needs a FREE Groq API key to power its\n"
+                                "AI actions (Summarize / Translate / Explain / Fix).",
+                 bg=dark, fg=fg, justify="left").pack(anchor="w", padx=18, pady=(0, 10))
+
+        steps = tk.LabelFrame(self.win, text=" How to get it (2 min, no card) ",
+                              bg=dark, fg=muted, bd=0, font=("Segoe UI", 9, "bold"))
+        steps.pack(fill="x", padx=18, pady=4)
+        for text in ("1. Open  console.groq.com/keys  in your browser",
+                     "2. Sign up / log in (free)",
+                     "3. Create API Key → copy it",
+                     "4. Paste it below 👇"):
+            tk.Label(steps, text=text, bg=dark, fg=fg, anchor="w",
+                     justify="left").pack(anchor="w", padx=10, pady=2)
+
+        tk.Label(self.win, text="Paste your key here:", bg=dark, fg=fg
+                 ).pack(anchor="w", padx=18, pady=(12, 3))
+        holder = tk.Frame(self.win, bg=accent, padx=1, pady=1)
+        holder.pack(fill="x", padx=18)
+        self.key_entry = tk.Entry(holder, show="•", bg=card, fg=fg,
+                                  insertbackground=fg, relief="flat",
+                                  font=("Segoe UI", 10))
+        self.key_entry.pack(fill="x", ipady=7, padx=1, pady=1)
+
+        self.msg_label = tk.Label(self.win, text="", bg=dark, fg=green,
+                                  font=("Segoe UI", 9), wraplength=410,
+                                  justify="left")
+        self.msg_label.pack(anchor="w", padx=18, pady=(4, 0))
+
+        btns = tk.Frame(self.win, bg=dark)
+        btns.pack(fill="x", padx=18, pady=(10, 16))
+
+        tk.Button(btns, text="✅ Connect", command=self._connect,
+                  bg=accent, fg="white", activebackground=THEME["accent2"],
+                  relief="flat", padx=16, pady=7, cursor="hand2",
+                  font=("Segoe UI", 10, "bold")).pack(side="left")
+        tk.Button(btns, text="Skip for now", command=self._skip,
+                  bg=THEME["card_alt"], fg=muted, relief="flat",
+                  padx=12, pady=7, cursor="hand2",
+                  font=("Segoe UI", 9)).pack(side="right")
+
+        tk.Label(self.win, text="🔒 Key stays in klip_data/.env on your PC — "
+                                "never uploaded, never shared.",
+                 bg=dark, fg=muted, font=("Segoe UI", 8),
+                 wraplength=410, justify="left").pack(anchor="w", padx=18, pady=(0, 12))
+
+        self.key_entry.bind("<Return>", lambda e: self._connect())
+
+    def _connect(self):
+        key = self.key_entry.get().strip()
+        if not key:
+            self.msg_label.config(text="Paste the key first 🙂", fg=THEME["danger"])
+            return
+        if save_api_key(key):
+            self.win.grab_release()
+            self.win.destroy()
+            self.app.set_status("AI connected — key saved to klip_data/.env ✅")
+            self.app.notify_ai_connected()
+        else:
+            self.msg_label.config(text="Key was empty — try again.", fg=THEME["danger"])
+
+    def _skip(self):
+        self.win.grab_release()
+        self.win.destroy()
+        self.app.settings["ai_setup_skipped"] = True
+        save_settings(self.app.settings)
+        self.app.set_status("Skipped AI setup — set a key anytime in Settings.")
+
+
 class SettingsWindow:
     """Separate small window for user preferences."""
 
@@ -96,6 +216,20 @@ class SettingsWindow:
 
         tk.Label(self.win, text="⚙️ Settings", font=("Segoe UI", 14, "bold"),
                  bg=dark, fg=accent).pack(anchor="w", padx=16, pady=(14, 8))
+
+        # --- AI connection status + key management ---
+        connected = has_api_key()
+        conn_color = THEME["green"] if connected else THEME["danger"]
+        conn_text = ("🟢 AI connected" if connected
+                     else "🔴 AI not connected — no key found")
+        tk.Label(self.win, text=conn_text, bg=dark, fg=conn_color,
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=16, pady=(0, 4))
+        tk.Button(self.win, text="🔑 " + ("Change / update API key" if connected
+                                         else "Connect AI (free Groq key)"),
+                  command=self.open_api_key_window, bg=THEME["card_alt"], fg=fg,
+                  activebackground=accent, activeforeground="white",
+                  relief="flat", padx=12, pady=6, cursor="hand2",
+                  font=("Segoe UI", 10)).pack(anchor="w", padx=16, pady=(0, 6))
 
         # --- AI actions section ---
         box = tk.LabelFrame(self.win, text=" AI Actions ", bg=dark, fg=muted,
@@ -118,6 +252,9 @@ class SettingsWindow:
             value=s.get("translate_language", "Hindi"))
         tk.OptionMenu(lang_row, self.lang_var, *LANGUAGES).pack(
             side="left", padx=6)
+        # Live-apply: picking a language saves it instantly (same as the
+        # Pause checkbox) — no Save click needed for Translate to use it
+        self.lang_var.trace_add("write", self._apply_language)
 
         # --- History section ---
         box2 = tk.LabelFrame(self.win, text=" History ", bg=dark, fg=muted,
@@ -199,11 +336,23 @@ class SettingsWindow:
         state = "paused" if self.pause_var.get() else "listening"
         self.app.set_status(f"Clipboard {state}.")
 
+    def _apply_language(self, *_):
+        """Translate language applies instantly — saved + used by next request."""
+        lang = self.lang_var.get()
+        self.app.settings["translate_language"] = lang
+        save_settings(self.app.settings)
+
     def clear_all(self):
         if messagebox.askyesno("Klip", "Delete ALL saved clips? This cannot be undone."):
             self.app.history.clear_all()
             self.app.refresh_list()
             self.app.set_status("History cleared.")
+
+    def open_api_key_window(self):
+        self.win.destroy()
+        self.app.settings["ai_setup_skipped"] = False
+        save_settings(self.app.settings)
+        ApiKeyWindow(self.app)
 
     def save(self):
         s = self.app.settings
@@ -262,6 +411,22 @@ class KlipPanel:
 
         if HAS_TRAY:
             self._start_tray()
+
+        # First-run AI setup: no key configured -> offer the connect dialog
+        self.root.after(400, self._maybe_show_api_setup)
+
+    def _maybe_show_api_setup(self):
+        """Open the API key dialog once per session when no key is present."""
+        if has_api_key():
+            return
+        if self.settings.get("ai_setup_skipped"):
+            # User skipped before — don't nag every start; Settings has a button
+            return
+        ApiKeyWindow(self)
+
+    def notify_ai_connected(self):
+        """Called after a key is saved — refresh status + open settings hint."""
+        self.set_status("AI connected ✅ — try Summarize on any clip!")
 
     def _on_clipboard_change(self, _is_new):
         """Called from the listener thread — hop back to the Tk thread."""
@@ -408,8 +573,10 @@ class KlipPanel:
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
         # Double-click a row = copy that clip straight back to the clipboard
         self.tree.bind("<Double-1>", lambda e: self.copy_selected())
-        # Clicking an already-selected row deselects it
+        # Clicking an already-selected row deselects it (runs after Tk's own
+        # selection handling); clicking empty space below rows also deselects
         self.tree.bind("<Button-1>", self._on_tree_click, add="+")
+        self.tree.bind("<Button-1>", self._on_tree_press, add="+")
 
         # Bottom: AI action buttons + result box
         actions = tk.Frame(self.root, bg=dark)
@@ -635,10 +802,31 @@ class KlipPanel:
         self.selected_id = int(selection[0]) if selection else None
 
     def _on_tree_click(self, event):
-        """Toggle selection: clicking the selected row again deselects it."""
+        """Toggle selection: clicking the selected row again deselects it.
+
+        Widget bindings fire BEFORE Tk's class binding (which selects the
+        row under the cursor), so we must capture whether the row was
+        already selected at press time. The actual deselect then runs one
+        tick later (after_idle), after Tk has finished its own handling —
+        otherwise Tk's re-select would fight us.
+        """
         item = self.tree.identify_row(event.y)
-        if item and item in self.tree.selection():
-            self.tree.selection_remove(item)
+        was_selected = bool(item) and item in self.tree.selection()
+
+        def _toggle():
+            if was_selected:
+                self.tree.selection_remove(item)
+                self.selected_id = None
+                self.clear_result()
+        if was_selected:
+            self.tree.after_idle(_toggle)
+
+    def _on_tree_press(self, event):
+        """Press on empty space below the rows = deselect (click-to-toggle)."""
+        if not self.tree.identify_row(event.y):
+            self.tree.selection_remove(*self.tree.selection())
+            self.selected_id = None
+            self.clear_result()
 
     def _pinned_clip_id(self):
         """Get the full text of the selected clip (via history, not the list)."""
@@ -691,6 +879,12 @@ class KlipPanel:
             self.set_status("Select a clip first, then press an AI action.")
             return
 
+        # No API key yet -> open the connect dialog instead of failing silently
+        if not has_api_key():
+            self.set_status("No AI key — connect Groq first.")
+            ApiKeyWindow(self)
+            return
+
         action = label.lower().replace(" ", "_")  # "Fix Code" -> "fix_code"
         if action == "fix_code":
             action = "fix"
@@ -728,10 +922,13 @@ class KlipPanel:
         self.set_status(f"AI is thinking ({label})...")
         self.set_result("Working...")
 
+        # Read the language at request time (not cached) — a language picked
+        # in Settings moments ago must be used by this very request
+        translate_lang = self.settings.get("translate_language", "Hindi")
+
         threading.Thread(
             target=self._ai_worker,
-            args=(action, content, self.settings.get("translate_language", "Hindi"),
-                  label),
+            args=(action, content, translate_lang, label),
             daemon=True,
         ).start()
 
@@ -741,7 +938,6 @@ class KlipPanel:
         except Exception as e:  # never let the worker thread die silently
             answer = f"AI request failed: {e}"
         self.ai_queue.put((label, answer))
-
     def _poll_ai_results(self):
         try:
             while True:
@@ -752,7 +948,6 @@ class KlipPanel:
         except queue.Empty:
             pass
         self.root.after(200, self._poll_ai_results)
-
     # ---------- Settings + startup ----------
 
     def open_settings(self):
@@ -764,10 +959,17 @@ class KlipPanel:
             startup_dir = Path.home() / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
             link = startup_dir / "Klip.bat"
             if enabled:
-                bat_path = Path(__file__).parent.parent / "Klip.bat"
-                link.write_text(f'@echo off\r\nstart "" "{bat_path}"\r\n', encoding="ascii")
+                if getattr(sys, "frozen", False):
+                    # EXE build: point startup directly at Klip.exe (no .bat)
+                    exe_path = Path(sys.executable)
+                    link = startup_dir / "Klip.exe.bat"
+                    link.write_text(f'@echo off\r\nstart "" "{exe_path}"\r\n', encoding="ascii")
+                else:
+                    bat_path = app_root() / "Klip.bat"
+                    link.write_text(f'@echo off\r\nstart "" "{bat_path}"\r\n', encoding="ascii")
             else:
-                link.unlink(missing_ok=True)
+                (startup_dir / "Klip.bat").unlink(missing_ok=True)
+                (startup_dir / "Klip.exe.bat").unlink(missing_ok=True)
         except OSError:
             pass  # non-fatal — settings still saved
 
